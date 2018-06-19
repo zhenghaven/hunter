@@ -336,6 +336,9 @@ hunter_add_version(
 
 if(MSVC)
   hunter_check_toolchain_definition(NAME "_DLL" DEFINED _hunter_vs_md)
+  if(${HUNTER_BOOST_RUNTIME_STATIC})
+    set(_hunter_vs_md OFF)
+  endif()
   hunter_cmake_args(
     Boost
     CMAKE_ARGS
