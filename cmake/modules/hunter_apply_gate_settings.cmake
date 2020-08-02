@@ -15,6 +15,8 @@ include(hunter_status_debug)
 include(hunter_assert_not_empty_string)
 
 function(hunter_apply_gate_settings)
+  hunter_assert_not_empty_string("${HUNTER_CONFIGURATION_TYPES}")
+
   get_property(gate_done GLOBAL PROPERTY HUNTER_GATE_SETTINGS_APPLIED SET)
   set_property(GLOBAL PROPERTY HUNTER_GATE_SETTINGS_APPLIED YES)
 
@@ -84,39 +86,59 @@ function(hunter_apply_gate_settings)
 
   set(hunter_base "${HUNTER_GATE_ROOT}/_Base")
 
-  # define configuration type variables
-  string(COMPARE EQUAL "${HUNTER_CONFIGURATION_TYPES}" "" use_default)
-  if(use_default)
-    set(HUNTER_CONFIGURATION_TYPES "Release;Debug")
+  list(LENGTH HUNTER_CONFIGURATION_TYPES len)
+  if(NOT len EQUAL "1")
+    foreach(configuration ${HUNTER_CONFIGURATION_TYPES})
+      string(TOUPPER "${configuration}" configuration_upper)
+      string(COMPARE EQUAL "${configuration_upper}" "RELEASE" is_release)
+      string(COMPARE EQUAL "${configuration_upper}" "DEBUG" is_debug)
+      string(COMPARE EQUAL "${CMAKE_${configuration_upper}_POSTFIX}" "" is_empty)
+      if(NOT is_release AND is_empty)
+        if(is_debug)
+          set(CMAKE_DEBUG_POSTFIX "d")
+          hunter_status_debug("Set CMAKE_DEBUG_POSTFIX to: d")
+        else()
+          set(CMAKE_${configuration_upper}_POSTFIX "-${configuration}")
+          hunter_status_debug(
+              "Set CMAKE_${configuration_upper}_POSTFIX to: -${configuration}"
+          )
+        endif()
+      endif()
+    endforeach()
   endif()
 
-  foreach(configuration ${HUNTER_CONFIGURATION_TYPES})
-    string(TOUPPER "${configuration}" configuration_upper)
-    string(COMPARE EQUAL "${configuration_upper}" "RELEASE" is_release)
-    string(COMPARE EQUAL "${configuration_upper}" "DEBUG" is_debug)
-    string(COMPARE EQUAL "${CMAKE_${configuration_upper}_POSTFIX}" "" is_empty)
-    if(NOT is_release AND is_empty)
-      if(is_debug)
-        set(CMAKE_DEBUG_POSTFIX "d")
-        hunter_status_debug("Set CMAKE_DEBUG_POSTFIX to: d")
-      else()
-        set(CMAKE_${configuration_upper}_POSTFIX "-${configuration}")
-        hunter_status_debug(
-            "Set CMAKE_${configuration_upper}_POSTFIX to: -${configuration}"
-        )
-      endif()
-    endif()
-  endforeach()
+  hunter_make_directory("${hunter_base}" "${HUNTER_GATE_SHA1}" hunter_id_path)
 
-  # * defines: HUNTER_GATE_TOOLCHAIN_SHA1
-  # * needs: HUNTER_CONFIGURATION_TYPES
-  # * needs: HUNTER_BUILD_SHARED_LIBS
-  # * creates: global_toolchain_info at
-  #   "${hunter_base}/${HUNTER_GATE_SHA1}/${HUNTER_GATE_TOOLCHAIN_SHA1}/toolchain.info"
-  hunter_calculate_toolchain_sha1("${hunter_self}" "${hunter_base}")
+  if("${HUNTER_TOOLCHAIN_SHA1}" STREQUAL "")
+    set(skip_toolchain_calculation NO)
+  elseif(HUNTER_NO_TOOLCHAIN_ID_RECALCULATION)
+    hunter_make_directory(
+        "${hunter_id_path}"
+        "${HUNTER_TOOLCHAIN_SHA1}"
+        hunter_toolchain_id_path
+    )
+    if(EXISTS "${hunter_toolchain_id_path}/toolchain.info")
+      set(skip_toolchain_calculation YES)
+    else()
+      set(skip_toolchain_calculation NO)
+    endif()
+  else()
+    set(skip_toolchain_calculation NO)
+  endif()
+
+  if(skip_toolchain_calculation)
+    hunter_status_debug("Toolchain-ID recalculation will be skipped")
+    set(HUNTER_GATE_TOOLCHAIN_SHA1 "${HUNTER_TOOLCHAIN_SHA1}")
+  else()
+    # * defines: HUNTER_GATE_TOOLCHAIN_SHA1
+    # * needs: HUNTER_CONFIGURATION_TYPES
+    # * needs: HUNTER_BUILD_SHARED_LIBS
+    # * creates: global_toolchain_info at
+    #   "${hunter_base}/${HUNTER_GATE_SHA1}/${HUNTER_GATE_TOOLCHAIN_SHA1}/toolchain.info"
+    hunter_calculate_toolchain_sha1("${hunter_self}" "${hunter_base}")
+  endif()
 
   # set PATH variables for hunter and toolchain
-  hunter_make_directory("${hunter_base}" "${HUNTER_GATE_SHA1}" hunter_id_path)
   hunter_make_directory(
       "${hunter_id_path}"
       "${HUNTER_GATE_TOOLCHAIN_SHA1}"
